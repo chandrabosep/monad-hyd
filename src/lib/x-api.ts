@@ -29,11 +29,13 @@ export interface XTweet {
 	author_id?: string;
 	created_at?: string;
 	public_metrics?: { like_count?: number; reply_count?: number; retweet_count?: number; quote_count?: number };
+	referenced_tweets?: Array<{ type: "replied_to" | "quoted" | "retweeted"; id: string }>;
 }
 
 /** Response shape for X API v2 list of tweets */
 export interface XTweetsResponse {
 	data?: XTweet[];
+	includes?: { tweets?: XTweet[] };
 	meta?: { next_token?: string; result_count?: number; newest_id?: string; oldest_id?: string };
 	errors?: Array<{ message: string; parameter?: string }>;
 }
@@ -93,8 +95,8 @@ export async function getXUserMentions(
 	opts?: { max_results?: number; since_id?: string },
 ): Promise<XTweetsResponse> {
 	const params: Record<string, string | number> = {
-		"tweet.fields": "created_at,author_id,text",
-		expansions: "author_id",
+		"tweet.fields": "created_at,author_id,text,referenced_tweets",
+		expansions: "author_id,referenced_tweets.id",
 		max_results: opts?.max_results ?? 20,
 	};
 	if (opts?.since_id) params.since_id = opts.since_id;

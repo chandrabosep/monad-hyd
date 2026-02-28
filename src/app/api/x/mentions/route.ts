@@ -4,7 +4,6 @@ import {
 	getXUserMentions,
 	isXConfigured,
 	isXReadConfigured,
-	type XTweet,
 } from "@/lib/x-api";
 import { createPoolOnChain } from "@/lib/create-pool";
 import { syncPoolFromChain, syncPoolFromTx } from "@/lib/sync-pool";
@@ -15,25 +14,6 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 const DEFAULT_CLOSE_HOURS = 24 * 7; // 7 days
 /** Only process tweets that mention this handle (e.g. @mooonhard) */
 const BOT_MENTION_HANDLE = (process.env.X_BOT_HANDLE || "mooonhard").toLowerCase();
-
-/** Fetch mentions via api.x.com/2 (Bearer) or SDK (OAuth). Returns list of tweets. */
-async function fetchMentions(botUserId: string): Promise<XTweet[]> {
-	if (isXReadConfigured()) {
-		const res = await getXUserMentions(botUserId, { max_results: 20 });
-		if (res.errors?.length) {
-			throw new Error(res.errors.map((e) => e.message).join("; "));
-		}
-		return res.data ?? [];
-	}
-	const client = getWriteClient();
-	if (!client) return [];
-	const mentions = await client.v2.userMentionTimeline(botUserId, {
-		max_results: 20,
-		"tweet.fields": ["created_at", "author_id", "text"],
-		expansions: ["author_id"],
-	});
-	return (mentions.data?.data ?? []) as XTweet[];
-}
 
 /**
  * GET /api/x/mentions
@@ -85,14 +65,43 @@ export async function GET(req: Request) {
 
 	try {
 		// Fetch mentions from X API (not DB) - tweet text comes from X
-		const tweets = await fetchMentions(botUserId);
+		const mentionsRes = await (async () => {
+			if (isXReadConfigured()) {
+				const res = await getXUserMentions(botUserId, { max_results: 20 });
+				if (res.errors?.length) throw new Error(res.errors.map((e) => e.message).join("; "));
+				return res;
+			}
+			const client = getWriteClient();
+			if (!client) return { data: [], includes: undefined };
+			const mentions = await client.v2.userMentionTimeline(botUserId, {
+				max_results: 20,
+				"tweet.fields": ["created_at", "author_id", "text", "referenced_tweets"],
+				expansions: ["author_id", "referenced_tweets.id"],
+			});
+			return { data: (mentions.data?.data ?? []) as import("@/lib/x-api").XTweet[], includes: (mentions.data?.includes as { tweets?: import("@/lib/x-api").XTweet[] }) };
+		})();
+		const tweets = mentionsRes.data ?? [];
+		/** Lookup map for expanded referenced tweets keyed by tweet ID */
+		const includedTweets = new Map<string, string>(
+			(mentionsRes.includes?.tweets ?? []).map((t) => [t.id, t.text ?? ""]),
+		);
 		const created: Array<{ tweetId: string; poolId: string }> = [];
 
 		console.log("[x/mentions] fetched", tweets.length, "mentions for user", botUserId);
 
 		for (const tweet of tweets) {
 			const tweetId = tweet.id;
-			const text = tweet.text ?? ""; // From X API response
+			const mentionText = tweet.text ?? "";
+
+			// Build full context: mention text + any referenced tweet content (reply/quote)
+			const referencedContent = (tweet.referenced_tweets ?? [])
+				.filter((r) => r.type === "replied_to" || r.type === "quoted")
+				.map((r) => includedTweets.get(r.id) ?? "")
+				.filter(Boolean)
+				.join(" ");
+			const text = referencedContent
+				? `${mentionText} ${referencedContent}`
+				: mentionText;
 
 			// Only process tweets that mention mooonhard (or configured handle)
 			if (!text.toLowerCase().includes(BOT_MENTION_HANDLE)) {
@@ -125,9 +134,20 @@ export async function GET(req: Request) {
 						});
 						created.push({ tweetId, poolId: existing.poolId });
 					} catch (replyErr: unknown) {
-						const err = replyErr as { data?: unknown };
+						const err = replyErr as { data?: { status?: number }; code?: number };
+						const status = err?.data?.status ?? err?.code;
 						const detail = err?.data ? JSON.stringify(err.data) : String(replyErr);
-						console.error("[x/mentions] reply retry failed for tweet", tweetId, "detail:", detail);
+						if (status === 403) {
+							// Permanently blocked from replying (restricted replies, private account, etc.)
+							// Mark as done to stop infinite retries; pool still exists and is accessible via URL
+							console.warn("[x/mentions] reply permanently blocked (403) for tweet", tweetId, "— marking as done. Pool:", existing.poolId);
+							await prisma.processedMention.update({
+								where: { tweetId },
+								data: { repliedAt: new Date() },
+							});
+						} else {
+							console.error("[x/mentions] reply retry failed for tweet", tweetId, "detail:", detail);
+						}
 					}
 				}
 				continue;
@@ -169,18 +189,22 @@ export async function GET(req: Request) {
 					reply: { in_reply_to_tweet_id: tweetId },
 				});
 			} catch (replyErr: unknown) {
-				const err = replyErr as { data?: unknown; code?: number };
+				const err = replyErr as { data?: { status?: number }; code?: number };
+				const status = err?.data?.status ?? err?.code;
 				const detail = err?.data ? JSON.stringify(err.data) : String(replyErr);
-				console.error(
-					"[x/mentions] reply failed for tweet",
-					tweetId,
-					"detail:",
-					detail,
-				);
-				// Mark pool as created so we don't duplicate; will retry reply on next cron
-				await prisma.processedMention.create({
-					data: { tweetId, poolId },
-				});
+				if (status === 403) {
+					// Permanently blocked from replying — mark fully processed so we don't retry
+					console.warn("[x/mentions] reply permanently blocked (403) for tweet", tweetId, "— marking as done. Pool:", poolId);
+					await prisma.processedMention.create({
+						data: { tweetId, poolId, repliedAt: new Date() },
+					});
+				} else {
+					console.error("[x/mentions] reply failed for tweet", tweetId, "detail:", detail);
+					// Mark pool as created so we don't duplicate; will retry reply on next cron
+					await prisma.processedMention.create({
+						data: { tweetId, poolId },
+					});
+				}
 				continue;
 			}
 
