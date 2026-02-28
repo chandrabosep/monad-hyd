@@ -61,7 +61,7 @@ export default function Home() {
 
 		if (!search.trim()) return sorted;
 		return sorted.filter((p) =>
-			p.question.toLowerCase().includes(search.toLowerCase())
+			p.question.toLowerCase().includes(search.toLowerCase()),
 		);
 	}, [pools, activeSort, search]);
 
@@ -78,7 +78,8 @@ export default function Home() {
 							href="/bet/create"
 							className="hidden sm:flex items-center gap-1.5 rounded-lg bg-violet-600/20 border border-violet-500/30 px-3 py-1.5 text-sm font-medium text-violet-300 hover:bg-violet-600/30 hover:border-violet-500/50 transition-all"
 						>
-							<span className="text-base leading-none">+</span> Create Pool
+							<span className="text-base leading-none">+</span>{" "}
+							Create Pool
 						</Link>
 						<ConnectButton />
 					</div>
@@ -95,8 +96,12 @@ export default function Home() {
 								M
 							</div>
 							<div className="text-center">
-								<p className="text-sm font-semibold text-white">MonHard</p>
-								<p className="text-xs text-zinc-500">@MonHard</p>
+								<p className="text-sm font-semibold text-white">
+									MonHard
+								</p>
+								<p className="text-xs text-zinc-500">
+									@MonHard
+								</p>
 							</div>
 							<Link
 								href="/bet/create"
@@ -170,14 +175,18 @@ export default function Home() {
 
 					{error && (
 						<div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-6 text-center">
-							<p className="text-rose-400 text-sm">Failed to load pools.</p>
+							<p className="text-rose-400 text-sm">
+								Failed to load pools.
+							</p>
 						</div>
 					)}
 
 					{!isLoading && !error && displayed.length === 0 && (
 						<div className="rounded-2xl border border-white/6 bg-white/3 p-16 text-center">
 							<p className="text-zinc-400 text-sm">
-								{search ? "No pools match your search." : "No pools yet."}
+								{search
+									? "No pools match your search."
+									: "No pools yet."}
 							</p>
 							<Link
 								href="/bet/create"
@@ -190,7 +199,9 @@ export default function Home() {
 
 					<div className="space-y-3">
 						{displayed.map((pool) => (
-							<BetCard key={pool.id} pool={pool} />
+							<div key={pool.id} className="my-2">
+								<BetCard key={pool.id} pool={pool} />
+							</div>
 						))}
 					</div>
 				</main>
@@ -212,23 +223,32 @@ export default function Home() {
 						</p>
 						<div className="space-y-2">
 							<div className="flex items-center justify-between px-1">
-								<span className="text-xs text-zinc-400">Total pools</span>
+								<span className="text-xs text-zinc-400">
+									Total pools
+								</span>
 								<span className="text-xs font-semibold text-white">
 									{pools?.length ?? 0}
 								</span>
 							</div>
 							<div className="flex items-center justify-between px-1">
-								<span className="text-xs text-zinc-400">Open</span>
+								<span className="text-xs text-zinc-400">
+									Open
+								</span>
 								<span className="text-xs font-semibold text-emerald-400">
 									{pools?.filter(
-										(p) => !p.resolved && new Date() < p.closeTime
+										(p) =>
+											!p.resolved &&
+											new Date() < p.closeTime,
 									).length ?? 0}
 								</span>
 							</div>
 							<div className="flex items-center justify-between px-1">
-								<span className="text-xs text-zinc-400">Resolved</span>
+								<span className="text-xs text-zinc-400">
+									Resolved
+								</span>
 								<span className="text-xs font-semibold text-zinc-400">
-									{pools?.filter((p) => p.resolved).length ?? 0}
+									{pools?.filter((p) => p.resolved).length ??
+										0}
 								</span>
 							</div>
 						</div>

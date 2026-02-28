@@ -71,7 +71,7 @@ export default function BetCard({ pool }: { pool: PoolData }) {
 	const displayTime = formatTimeAgo(pool.closeTime);
 
 	return (
-		<Link href={`/bet/${pool.id}`}>
+		<Link href={`/bet/${pool.id}`} className="">
 			<article className="group rounded-2xl border border-white/6 bg-white/3 p-5 transition-all hover:border-violet-500/25 hover:bg-white/5 cursor-pointer">
 				{/* Top row: creator + time + status */}
 				<div className="flex items-center justify-between mb-3">
