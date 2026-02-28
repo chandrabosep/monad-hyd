@@ -20,7 +20,7 @@ model Pool {
   resolved       Boolean
   winningSide    Boolean?
   createdBy      String
-  sourceTweetId  String?  // X tweet ID when pool was created from a mention (for X API fetch)
+  sourceTweetId  String?  // X tweet ID when pool was created from a mention (for "view tweet" link)
 }
 
 model Bet {

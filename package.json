@@ -4,7 +4,7 @@
 	"private": true,
 	"scripts": {
 		"dev": "next dev",
-		"build": "next build",
+		"build": "node scripts/update-cron.js && next build",
 		"start": "next start",
 		"lint": "eslint"
 	},
@@ -16,6 +16,7 @@
 		"@tanstack/react-query": "^5.90.21",
 		"dotenv": "^17.3.1",
 		"next": "16.1.6",
+		"openai": "^6.25.0",
 		"prisma": "^5.22.0",
 		"react": "19.2.3",
 		"react-dom": "19.2.3",

@@ -2,12 +2,12 @@ import { NextResponse } from "next/server";
 import { createPublicClient, http } from "viem";
 import { monadTestnet } from "viem/chains";
 import { prisma } from "@/lib/prisma";
+import { CONTRACT_ADDRESS, MONHARD_ABI } from "@/lib/contract";
 
 /** X tweet URL for "view original" when pool was created from a mention */
-export function tweetUrl(tweetId: string): string {
+function tweetUrl(tweetId: string): string {
 	return `https://x.com/i/status/${tweetId}`;
 }
-import { CONTRACT_ADDRESS, MONHARD_ABI } from "@/lib/contract";
 
 const publicClient = createPublicClient({
 	chain: monadTestnet,
@@ -17,73 +17,61 @@ const publicClient = createPublicClient({
 	),
 });
 
+/**
+ * GET /api/pools/[id]
+ * Uses DB as primary source (question, closeTime, etc). Fetches totals from chain only.
+ */
 export async function GET(
 	_req: Request,
 	{ params }: { params: Promise<{ id: string }> },
 ) {
 	const { id } = await params;
-	const poolId = BigInt(id);
 
 	try {
-		const p = await publicClient.readContract({
-			address: CONTRACT_ADDRESS,
-			abi: MONHARD_ABI,
-			functionName: "pools",
-			args: [poolId],
-		});
-
-		const dbPool = await prisma.pool.findUnique({ where: { id } }).catch(() => null);
-
-		if (!p || !p[1]) {
-			if (dbPool) {
-				return NextResponse.json({
-					id: dbPool.id,
-					question: dbPool.question,
-					closeTime: dbPool.closeTime.toISOString(),
-					totalYes: "0",
-					totalNo: "0",
-					resolved: dbPool.resolved,
-					winningSide: dbPool.winningSide,
-					creator: dbPool.createdBy,
-					sourceTweetId: dbPool.sourceTweetId ?? undefined,
-					sourceTweetUrl: dbPool.sourceTweetId ? tweetUrl(dbPool.sourceTweetId) : undefined,
-				});
-			}
+		const dbPool = await prisma.pool.findUnique({ where: { id } });
+		if (!dbPool) {
 			return NextResponse.json(
 				{ error: "Pool not found" },
 				{ status: 404 },
 			);
 		}
 
+		// Fetch live totals from chain (totalYes, totalNo change when users bet)
+		let totalYes = "0";
+		let totalNo = "0";
+		let resolved = dbPool.resolved;
+		let winningSide = dbPool.winningSide;
+		try {
+			const p = await publicClient.readContract({
+				address: CONTRACT_ADDRESS,
+				abi: MONHARD_ABI,
+				functionName: "pools",
+				args: [BigInt(id)],
+			});
+			if (p && p[1]) {
+				totalYes = p[3].toString();
+				totalNo = p[4].toString();
+				resolved = p[5];
+				winningSide = p[5] ? p[6] : null;
+			}
+		} catch {
+			// use DB values for totals
+		}
+
 		return NextResponse.json({
-			id,
-			question: p[1],
-			closeTime: new Date(Number(p[2]) * 1000).toISOString(),
-			totalYes: p[3].toString(),
-			totalNo: p[4].toString(),
-			resolved: p[5],
-			winningSide: p[5] ? p[6] : null,
-			creator: p[7],
-			sourceTweetId: dbPool?.sourceTweetId ?? undefined,
-			sourceTweetUrl: dbPool?.sourceTweetId ? tweetUrl(dbPool.sourceTweetId) : undefined,
+			id: dbPool.id,
+			question: dbPool.question,
+			closeTime: dbPool.closeTime.toISOString(),
+			totalYes,
+			totalNo,
+			resolved,
+			winningSide,
+			creator: dbPool.createdBy,
+			sourceTweetId: dbPool.sourceTweetId ?? undefined,
+			sourceTweetUrl: dbPool.sourceTweetId ? tweetUrl(dbPool.sourceTweetId) : undefined,
 		});
 	} catch (e) {
 		console.error("[api/pools/[id]] error:", e);
-		const dbPool = await prisma.pool.findUnique({ where: { id } }).catch(() => null);
-		if (dbPool) {
-			return NextResponse.json({
-				id: dbPool.id,
-				question: dbPool.question,
-				closeTime: dbPool.closeTime.toISOString(),
-				totalYes: "0",
-				totalNo: "0",
-				resolved: dbPool.resolved,
-				winningSide: dbPool.winningSide,
-				creator: dbPool.createdBy,
-				sourceTweetId: dbPool.sourceTweetId ?? undefined,
-				sourceTweetUrl: dbPool.sourceTweetId ? tweetUrl(dbPool.sourceTweetId) : undefined,
-			});
-		}
 		return NextResponse.json({ error: "Pool not found" }, { status: 404 });
 	}
 }

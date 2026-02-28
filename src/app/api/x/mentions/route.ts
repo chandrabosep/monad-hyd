@@ -7,24 +7,12 @@ import {
 	type XTweet,
 } from "@/lib/x-api";
 import { createPoolOnChain } from "@/lib/create-pool";
+import { syncPoolFromChain, syncPoolFromTx } from "@/lib/sync-pool";
+import { tweetToQuestion } from "@/lib/tweet-to-question";
 import { prisma } from "@/lib/prisma";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 const DEFAULT_CLOSE_HOURS = 24 * 7; // 7 days
-
-/**
- * Extracts a betting question from tweet text.
- * Removes @mentions and trims. Falls back to "Will this happen?" if empty.
- */
-function parseQuestionFromTweet(text: string): string {
-	// Remove @mentions (e.g. @MonHard @CanIBetOn)
-	let q = text.replace(/@\w+/g, "").trim();
-	// Remove extra whitespace
-	q = q.replace(/\s+/g, " ").trim();
-	if (!q || q.length < 3) return "Will this happen?";
-	if (q.length > 200) q = q.slice(0, 197) + "...";
-	return q;
-}
 
 /** Fetch mentions via api.x.com/2 (Bearer) or SDK (OAuth). Returns list of tweets. */
 async function fetchMentions(botUserId: string): Promise<XTweet[]> {
@@ -53,6 +41,7 @@ async function fetchMentions(botUserId: string): Promise<XTweet[]> {
  * Read: X_API_BEARER_TOKEN or BEARER_TOKEN (per https://docs.x.com/x-api/getting-started/make-your-first-request)
  * Write: X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET (OAuth 1.0a for posting)
  * Requires: OWNER_PRIVATE_KEY, X_BOT_USER_ID, NEXT_PUBLIC_APP_URL
+ * Optional: GROQ_API_KEY - when set, AI converts tweet to yes/no question; else fallback parse
  * Optional: CRON_SECRET - when set, Vercel sends it as Bearer token; reject if missing
  */
 export async function GET(req: Request) {
@@ -93,23 +82,23 @@ export async function GET(req: Request) {
 	}
 
 	try {
+		// Fetch mentions from X API (not DB) - tweet text comes from X
 		const tweets = await fetchMentions(botUserId);
 		const created: Array<{ tweetId: string; poolId: string }> = [];
 
-		// Debug: log how many mentions we got
 		console.log("[x/mentions] fetched", tweets.length, "mentions for user", botUserId);
 
 		for (const tweet of tweets) {
 			const tweetId = tweet.id;
-			const text = tweet.text ?? "";
+			const text = tweet.text ?? ""; // From X API response
 
-			// Skip if already processed
+			// Skip if already processed (DB check to avoid duplicate pools)
 			const existing = await prisma.processedMention.findUnique({
 				where: { tweetId },
 			});
 			if (existing) continue;
 
-			const question = parseQuestionFromTweet(text);
+			const question = await tweetToQuestion(text);
 			const closeTime = Math.floor(
 				Date.now() / 1000 + DEFAULT_CLOSE_HOURS * 60 * 60,
 			);
@@ -125,12 +114,15 @@ export async function GET(req: Request) {
 
 			const { poolId, txHash } = result;
 
-			// Sync to DB (include source tweet for X API fetch / "view tweet" link)
-			await fetch(`${APP_URL}/api/pools/sync`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ txHash, sourceTweetId: tweetId }),
-			}).catch(() => {});
+			// Sync to DB (try tx first, fallback to chain read)
+			let synced = await syncPoolFromTx(txHash, tweetId);
+			if (!synced) {
+				synced = await syncPoolFromChain(poolId, tweetId);
+			}
+			if (!synced) {
+				console.error("[x/mentions] sync to DB failed for tx", txHash);
+				continue; // Don't mark as processed if pool wasn't synced to DB
+			}
 
 			// Mark as processed
 			await prisma.processedMention.create({
