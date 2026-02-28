@@ -8,7 +8,7 @@ import {
 } from "@/lib/x-api";
 import { createPoolOnChain } from "@/lib/create-pool";
 import { syncPoolFromChain, syncPoolFromTx } from "@/lib/sync-pool";
-import { tweetToQuestion } from "@/lib/tweet-to-question";
+import { tweetToQuestion, questionToOptions } from "@/lib/tweet-to-question";
 import { prisma } from "@/lib/prisma";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -92,11 +92,37 @@ export async function GET(req: Request) {
 			const tweetId = tweet.id;
 			const text = tweet.text ?? ""; // From X API response
 
-			// Skip if already processed (DB check to avoid duplicate pools)
 			const existing = await prisma.processedMention.findUnique({
 				where: { tweetId },
 			});
-			if (existing) continue;
+
+			// Already processed and replied - skip
+			if (existing?.repliedAt) continue;
+
+			// Have pool but reply failed before - retry reply only
+			if (existing) {
+				const pool = await prisma.pool.findUnique({
+					where: { id: existing.poolId },
+				});
+				if (pool) {
+					const { optionA, optionB } = await questionToOptions(pool.question);
+					const poolUrl = `${APP_URL}/pools/${existing.poolId}`;
+					const replyText = `Q: ${pool.question}\nA) ${optionA}\nB) ${optionB}\n\nPlace your bets: ${poolUrl}`;
+					try {
+						await writeClient.v2.tweet(replyText, {
+							reply: { in_reply_to_tweet_id: tweetId },
+						});
+						await prisma.processedMention.update({
+							where: { tweetId },
+							data: { repliedAt: new Date() },
+						});
+						created.push({ tweetId, poolId: existing.poolId });
+					} catch (replyErr) {
+						console.error("[x/mentions] reply retry failed for tweet", tweetId, replyErr);
+					}
+				}
+				continue;
+			}
 
 			const question = await tweetToQuestion(text);
 			const closeTime = Math.floor(
@@ -124,14 +150,10 @@ export async function GET(req: Request) {
 				continue; // Don't mark as processed if pool wasn't synced to DB
 			}
 
-			// Mark as processed
-			await prisma.processedMention.create({
-				data: { tweetId, poolId },
-			});
-
-			// Reply with pool link
-			const poolUrl = `${APP_URL}/bet/${poolId}`;
-			const replyText = `Pool created! Bet Yes or No: ${poolUrl}`;
+			// Reply with formatted Q/A and pool link (before marking processed so we retry if reply fails)
+			const { optionA, optionB } = await questionToOptions(question);
+			const poolUrl = `${APP_URL}/pools/${poolId}`;
+			const replyText = `Q: ${question}\nA) ${optionA}\nB) ${optionB}\n\nPlace your bets: ${poolUrl}`;
 
 			try {
 				await writeClient.v2.tweet(replyText, {
@@ -143,7 +165,16 @@ export async function GET(req: Request) {
 					tweetId,
 					replyErr,
 				);
+				// Mark pool as created so we don't duplicate; will retry reply on next cron
+				await prisma.processedMention.create({
+					data: { tweetId, poolId },
+				});
+				continue;
 			}
+
+			await prisma.processedMention.create({
+				data: { tweetId, poolId, repliedAt: new Date() },
+			});
 
 			created.push({ tweetId, poolId });
 		}

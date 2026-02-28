@@ -73,3 +73,83 @@ function fallbackParse(text: string): string {
 	if (q.endsWith("?")) return q.slice(0, 200);
 	return q.slice(0, 197) + "?";
 }
+
+const OPTIONS_SYSTEM_PROMPT = `You format yes/no prediction questions into two clear options.
+
+Output EXACTLY two lines in this format:
+A) Yes, [restate the positive outcome - concise, under 80 chars]
+B) No, [restate the negative outcome - concise, under 80 chars]
+
+Example:
+Question: Will a new stealth game be announced for the Switch 2 within one month of its release?
+A) Yes, a new stealth game will be announced
+B) No, no new stealth game will be announced
+
+Output ONLY the two lines (A) and B)), nothing else. No quotes, no preamble.`;
+
+/**
+ * Converts a yes/no question into A) and B) option text for the reply.
+ * Uses Groq when available; falls back to simple heuristic.
+ */
+export async function questionToOptions(
+	question: string,
+): Promise<{ optionA: string; optionB: string }> {
+	const q = question.trim();
+	if (!q) return { optionA: "Yes", optionB: "No" };
+
+	const apiKey = process.env.GROQ_API_KEY;
+	if (apiKey) {
+		try {
+			const completion = await client.chat.completions.create({
+				model: GROQ_MODEL,
+				messages: [
+					{ role: "system", content: OPTIONS_SYSTEM_PROMPT },
+					{ role: "user", content: `Question: ${q}` },
+				],
+				max_tokens: 120,
+				temperature: 0.2,
+			});
+			const raw = completion.choices?.[0]?.message?.content?.trim() ?? "";
+			const parsed = parseOptionsFromResponse(raw);
+			if (parsed) return parsed;
+		} catch (e) {
+			console.error("[tweet-to-question] options Groq error:", e);
+		}
+	}
+
+	return fallbackOptions(q);
+}
+
+function parseOptionsFromResponse(
+	raw: string,
+): { optionA: string; optionB: string } | null {
+	const aMatch = raw.match(/A\)\s*(.+?)(?=\n|B\)|$)/is);
+	const bMatch = raw.match(/B\)\s*(.+?)(?=\n|$)/is);
+	if (aMatch && bMatch) {
+		return {
+			optionA: aMatch[1].trim().slice(0, 100),
+			optionB: bMatch[1].trim().slice(0, 100),
+		};
+	}
+	return null;
+}
+
+function fallbackOptions(question: string): { optionA: string; optionB: string } {
+	const q = question.replace(/\?+$/, "").trim();
+	// "Will X happen?" -> Yes: X will happen, No: no X
+	const willMatch = q.match(/^Will\s+(.+)$/i);
+	if (willMatch) {
+		let rest = willMatch[1]
+			.replace(/\bbe\b/g, "will be")
+			.replace(/\bhave\b/g, "will have")
+			.trim();
+		const cap = rest.charAt(0).toUpperCase() + rest.slice(1);
+		// "a new X" -> "no new X" for option B
+		const forNo = rest.replace(/^(a|an)\s+/i, "no ");
+		return {
+			optionA: `Yes, ${cap}`,
+			optionB: `No, ${forNo.charAt(0).toLowerCase() + forNo.slice(1)}`,
+		};
+	}
+	return { optionA: "Yes", optionB: "No" };
+}

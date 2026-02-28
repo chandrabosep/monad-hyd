@@ -33,7 +33,8 @@ model Bet {
 
 // Tracks X mentions we've already processed (avoid duplicate pools)
 model ProcessedMention {
-  tweetId   String   @id
+  tweetId   String    @id
   poolId    String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  repliedAt DateTime?   // When we successfully replied; null = reply pending/retry
 }
