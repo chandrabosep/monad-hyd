@@ -6,7 +6,8 @@
 		"dev": "next dev",
 		"build": "node scripts/update-cron.js && next build",
 		"start": "next start",
-		"lint": "eslint"
+		"lint": "eslint",
+		"x:token": "node scripts/get-oauth-tokens.mjs"
 	},
 	"dependencies": {
 		"@prisma/adapter-pg": "^7.4.2",

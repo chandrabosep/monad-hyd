@@ -13,6 +13,8 @@ import { prisma } from "@/lib/prisma";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 const DEFAULT_CLOSE_HOURS = 24 * 7; // 7 days
+/** Only process tweets that mention this handle (e.g. @mooonhard) */
+const BOT_MENTION_HANDLE = (process.env.X_BOT_HANDLE || "mooonhard").toLowerCase();
 
 /** Fetch mentions via api.x.com/2 (Bearer) or SDK (OAuth). Returns list of tweets. */
 async function fetchMentions(botUserId: string): Promise<XTweet[]> {
@@ -92,6 +94,11 @@ export async function GET(req: Request) {
 			const tweetId = tweet.id;
 			const text = tweet.text ?? ""; // From X API response
 
+			// Only process tweets that mention mooonhard (or configured handle)
+			if (!text.toLowerCase().includes(BOT_MENTION_HANDLE)) {
+				continue;
+			}
+
 			const existing = await prisma.processedMention.findUnique({
 				where: { tweetId },
 			});
@@ -117,8 +124,10 @@ export async function GET(req: Request) {
 							data: { repliedAt: new Date() },
 						});
 						created.push({ tweetId, poolId: existing.poolId });
-					} catch (replyErr) {
-						console.error("[x/mentions] reply retry failed for tweet", tweetId, replyErr);
+					} catch (replyErr: unknown) {
+						const err = replyErr as { data?: unknown };
+						const detail = err?.data ? JSON.stringify(err.data) : String(replyErr);
+						console.error("[x/mentions] reply retry failed for tweet", tweetId, "detail:", detail);
 					}
 				}
 				continue;
@@ -159,11 +168,14 @@ export async function GET(req: Request) {
 				await writeClient.v2.tweet(replyText, {
 					reply: { in_reply_to_tweet_id: tweetId },
 				});
-			} catch (replyErr) {
+			} catch (replyErr: unknown) {
+				const err = replyErr as { data?: unknown; code?: number };
+				const detail = err?.data ? JSON.stringify(err.data) : String(replyErr);
 				console.error(
 					"[x/mentions] reply failed for tweet",
 					tweetId,
-					replyErr,
+					"detail:",
+					detail,
 				);
 				// Mark pool as created so we don't duplicate; will retry reply on next cron
 				await prisma.processedMention.create({
