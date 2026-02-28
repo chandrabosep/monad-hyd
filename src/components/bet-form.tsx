@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useWriteContract, useWaitForTransactionReceipt } from "wagmi";
+import { useWriteContract, useWaitForTransactionReceipt, useAccount } from "wagmi";
 import { parseEther } from "viem";
 import { CONTRACT_ADDRESS, MONHARD_ABI } from "@/lib/contract";
 import { useInvalidatePools } from "@/lib/queries";
@@ -123,6 +123,8 @@ export function BetForm({ poolId, disabled }: BetFormProps) {
 	const [amount, setAmount] = useState("");
 	const [side, setSide] = useState<boolean>(true);
 	const invalidate = useInvalidatePools();
+	const { address } = useAccount();
+	const synced = useRef(false);
 
 	const { writeContract, data: hash, isPending } = useWriteContract();
 	const { isLoading: isConfirming, status } = useWaitForTransactionReceipt({
@@ -130,8 +132,27 @@ export function BetForm({ poolId, disabled }: BetFormProps) {
 	});
 
 	useEffect(() => {
-		if (status === "success") invalidate();
-	}, [status, invalidate]);
+		synced.current = false;
+	}, [hash]);
+
+	useEffect(() => {
+		if (status === "success" && hash && address && !synced.current) {
+			synced.current = true;
+			fetch("/api/bets", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					txHash: hash,
+					poolId,
+					userAddress: address,
+					amount: parseEther(amount || "0").toString(),
+					side,
+				}),
+			}).finally(() => {
+				invalidate(poolId);
+			});
+		}
+	}, [status, hash, address, poolId, amount, side, invalidate]);
 
 	const handleBet = (e: React.FormEvent) => {
 		e.preventDefault();

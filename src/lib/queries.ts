@@ -76,5 +76,12 @@ export function useNextPoolId() {
 
 export function useInvalidatePools() {
 	const qc = useQueryClient();
-	return () => qc.invalidateQueries({ queryKey: ["pools"] });
+	return (poolId?: string) => {
+		qc.invalidateQueries({ queryKey: ["pools"] });
+		if (poolId) {
+			qc.invalidateQueries({ queryKey: ["pool", poolId] });
+		} else {
+			qc.invalidateQueries({ queryKey: ["pool"] });
+		}
+	};
 }

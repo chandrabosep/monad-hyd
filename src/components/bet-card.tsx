@@ -98,20 +98,28 @@ export default function BetCard({ pool }: { pool: PoolData }) {
 					{pool.question}
 				</p>
 
-				{/* Progress bar */}
-				<div className="h-2 w-full rounded-full overflow-hidden bg-white/5 mb-3">
-					<div
-						className="h-full rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 transition-all"
-						style={{ width: `${yesPct}%` }}
-					/>
-				</div>
+			{/* Progress bar */}
+			<div className="h-2 w-full rounded-full overflow-hidden mb-3 flex bg-white/5">
+				{total > BigInt(0) && (
+					<>
+						<div
+							className="h-full transition-all"
+							style={{ width: `${yesPct}%`, backgroundColor: "#22c55e" }}
+						/>
+						<div
+							className="h-full transition-all flex-1"
+							style={{ backgroundColor: "#ef4444" }}
+						/>
+					</>
+				)}
+			</div>
 
 				{/* Yes / No stats */}
 				<div className="flex flex-col gap-1.5">
 					{/* Yes row */}
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-2">
-							<span className="text-sm font-semibold text-violet-400">
+							<span className="text-sm font-semibold text-emerald-400">
 								{yesPct}% Yes
 							</span>
 						</div>
@@ -125,7 +133,7 @@ export default function BetCard({ pool }: { pool: PoolData }) {
 					{/* No row */}
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-2">
-							<span className="text-sm font-semibold text-rose-400">
+							<span className="text-sm font-semibold" style={{ color: "#ef4444" }}>
 								{noPct}% No
 							</span>
 						</div>
@@ -139,9 +147,10 @@ export default function BetCard({ pool }: { pool: PoolData }) {
 
 				{pool.resolved && pool.winningSide !== null && (
 					<div className="mt-3 pt-3 border-t border-white/5">
-						<span
-							className={`text-xs font-semibold ${pool.winningSide ? "text-violet-400" : "text-rose-400"}`}
-						>
+					<span
+						className={`text-xs font-semibold ${pool.winningSide ? "text-emerald-400" : ""}`}
+						style={!pool.winningSide ? { color: "#ef4444" } : {}}
+					>
 							Winner: {pool.winningSide ? "Yes" : "No"}
 						</span>
 					</div>

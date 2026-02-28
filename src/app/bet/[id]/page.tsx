@@ -72,8 +72,8 @@ export default function BetDetailPage() {
 	});
 
 	useEffect(() => {
-		if (resolveStatus === "success" || claimStatus === "success") invalidate();
-	}, [resolveStatus, claimStatus, invalidate]);
+		if (resolveStatus === "success" || claimStatus === "success") invalidate(id);
+	}, [resolveStatus, claimStatus, invalidate, id]);
 
 	const canResolve =
 		address &&
@@ -174,25 +174,33 @@ export default function BetDetailPage() {
 						{pool.question}
 					</h1>
 
-					{/* Progress bar */}
-					<div className="h-2.5 w-full rounded-full overflow-hidden bg-white/5 mb-4">
-						<div
-							className="h-full rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 transition-all"
-							style={{ width: `${yesPct}%` }}
-						/>
-					</div>
+				{/* Progress bar */}
+				<div className="h-2.5 w-full rounded-full overflow-hidden mb-4 flex bg-white/5">
+					{total > BigInt(0) && (
+						<>
+							<div
+								className="h-full transition-all"
+								style={{ width: `${yesPct}%`, backgroundColor: "#22c55e" }}
+							/>
+							<div
+								className="h-full transition-all flex-1"
+								style={{ backgroundColor: "#ef4444" }}
+							/>
+						</>
+					)}
+				</div>
 
 					{/* Yes / No stats */}
 					<div className="grid grid-cols-2 gap-4">
-						<div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-4">
-							<p className="text-2xl font-bold text-violet-400">{yesPct}%</p>
+						<div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+							<p className="text-2xl font-bold text-emerald-400">{yesPct}%</p>
 							<p className="text-xs font-medium text-zinc-400 mt-1">Yes</p>
 							<p className="text-sm font-mono text-zinc-300 mt-2">
 								{formatAmount(totalYes)} MON
 							</p>
 						</div>
-						<div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4">
-							<p className="text-2xl font-bold text-rose-400">{noPct}%</p>
+						<div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4">
+							<p className="text-2xl font-bold" style={{ color: "#ef4444" }}>{noPct}%</p>
 							<p className="text-xs font-medium text-zinc-400 mt-1">No</p>
 							<p className="text-sm font-mono text-zinc-300 mt-2">
 								{formatAmount(totalNo)} MON
@@ -203,7 +211,8 @@ export default function BetDetailPage() {
 					{pool.resolved && pool.winningSide !== null && (
 						<div className="mt-5 rounded-xl border border-white/6 bg-white/3 p-4 flex items-center gap-3">
 							<div
-								className={`h-8 w-8 rounded-full flex items-center justify-center text-lg ${pool.winningSide ? "bg-violet-500/20 text-violet-400" : "bg-rose-500/20 text-rose-400"}`}
+								className={`h-8 w-8 rounded-full flex items-center justify-center text-lg ${pool.winningSide ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20"}`}
+							style={!pool.winningSide ? { color: "#ef4444" } : {}}
 							>
 								{pool.winningSide ? "✓" : "✗"}
 							</div>
@@ -212,7 +221,8 @@ export default function BetDetailPage() {
 									Resolved
 								</p>
 								<p
-									className={`text-sm font-semibold ${pool.winningSide ? "text-violet-400" : "text-rose-400"}`}
+									className={`text-sm font-semibold ${pool.winningSide ? "text-emerald-400" : ""}`}
+								style={!pool.winningSide ? { color: "#ef4444" } : {}}
 								>
 									{pool.winningSide ? "Yes" : "No"} won
 								</p>

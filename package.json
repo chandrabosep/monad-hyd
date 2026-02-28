@@ -4,9 +4,11 @@
 	"private": true,
 	"scripts": {
 		"dev": "next dev",
+		"dev:full": "node scripts/poll-mentions.mjs & next dev",
 		"build": "node scripts/update-cron.js && next build",
 		"start": "next start",
 		"lint": "eslint",
+		"sync": "node scripts/poll-mentions.mjs",
 		"x:token": "node scripts/get-oauth-tokens.mjs"
 	},
 	"dependencies": {
