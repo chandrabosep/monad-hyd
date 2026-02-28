@@ -34,6 +34,7 @@ export function CreatePoolForm() {
 				.then((data) => {
 					invalidate();
 					if (data.poolId) router.push(`/bet/${data.poolId}`);
+					else router.push("/");
 				});
 		}
 	}, [status, hash, invalidate, router]);
@@ -50,40 +51,69 @@ export function CreatePoolForm() {
 		});
 	};
 
+	const isWorking = isPending || isConfirming;
+
 	return (
-		<form onSubmit={handleSubmit} className="space-y-4">
+		<form onSubmit={handleSubmit} className="space-y-5">
 			<div>
-				<label className="block text-sm font-medium text-zinc-400">
+				<label className="block text-sm font-medium text-zinc-300 mb-1.5">
 					Question
 				</label>
-				<input
-					type="text"
+				<textarea
 					value={question}
 					onChange={(e) => setQuestion(e.target.value)}
-					placeholder="Will X happen?"
-					className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
+					placeholder="Will X happen by [date]?"
+					rows={3}
+					className="w-full resize-none rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-white placeholder-zinc-500 focus:border-violet-500/50 focus:outline-none focus:bg-white/6 transition-all text-sm"
 					required
 				/>
 			</div>
+
 			<div>
-				<label className="block text-sm font-medium text-zinc-400">
-					Close time
+				<label className="block text-sm font-medium text-zinc-300 mb-1.5">
+					Closes at
 				</label>
 				<input
 					type="datetime-local"
 					value={closeTime}
 					onChange={(e) => setCloseTime(e.target.value)}
-					min={new Date().toISOString().slice(0, 16)}
-					className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100 focus:border-zinc-600 focus:outline-none"
+					min={new Date(Date.now() + 60000).toISOString().slice(0, 16)}
+					className="w-full rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-white focus:border-violet-500/50 focus:outline-none focus:bg-white/6 transition-all text-sm scheme-dark"
 					required
 				/>
 			</div>
+
 			<button
 				type="submit"
-				disabled={isPending || isConfirming}
-				className="w-full rounded-lg bg-zinc-100 px-4 py-2 font-medium text-zinc-900 transition-colors hover:bg-white disabled:opacity-50"
+				disabled={isWorking || !question.trim() || !closeTime}
+				className="w-full rounded-xl bg-violet-600 px-4 py-3 font-semibold text-white transition-all hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed"
 			>
-				{isPending || isConfirming ? "Creating..." : "Create Pool"}
+				{isWorking ? (
+					<span className="flex items-center justify-center gap-2">
+						<svg
+							className="h-4 w-4 animate-spin"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<circle
+								className="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								strokeWidth="4"
+							/>
+							<path
+								className="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+							/>
+						</svg>
+						{isPending ? "Confirm in wallet…" : "Creating pool…"}
+					</span>
+				) : (
+					"Create Pool"
+				)}
 			</button>
 		</form>
 	);
@@ -116,28 +146,19 @@ export function BetForm({ poolId, disabled }: BetFormProps) {
 		});
 	};
 
+	const isWorking = isPending || isConfirming;
+
 	return (
 		<form onSubmit={handleBet} className="space-y-4">
-			<div>
-				<label className="block text-sm font-medium text-zinc-400">
-					Amount (ETH)
-				</label>
-				<input
-					type="text"
-					value={amount}
-					onChange={(e) => setAmount(e.target.value)}
-					placeholder="0.01"
-					className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:border-zinc-600 focus:outline-none"
-				/>
-			</div>
-			<div className="flex gap-2">
+			{/* Side selector */}
+			<div className="grid grid-cols-2 gap-2">
 				<button
 					type="button"
 					onClick={() => setSide(true)}
-					className={`flex-1 rounded-lg px-4 py-2 font-medium transition-colors ${
+					className={`rounded-xl px-4 py-3 font-semibold text-sm transition-all ${
 						side
-							? "bg-emerald-600 text-white"
-							: "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+							? "bg-violet-600 text-white shadow-lg shadow-violet-900/30"
+							: "border border-white/8 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6"
 					}`}
 				>
 					Yes
@@ -145,21 +166,72 @@ export function BetForm({ poolId, disabled }: BetFormProps) {
 				<button
 					type="button"
 					onClick={() => setSide(false)}
-					className={`flex-1 rounded-lg px-4 py-2 font-medium transition-colors ${
+					className={`rounded-xl px-4 py-3 font-semibold text-sm transition-all ${
 						!side
-							? "bg-rose-600 text-white"
-							: "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+							? "bg-rose-600 text-white shadow-lg shadow-rose-900/30"
+							: "border border-white/8 bg-white/3 text-zinc-400 hover:text-white hover:bg-white/6"
 					}`}
 				>
 					No
 				</button>
 			</div>
+
+			{/* Amount input */}
+			<div>
+				<label className="block text-sm font-medium text-zinc-300 mb-1.5">
+					Amount (MON)
+				</label>
+				<div className="relative">
+					<input
+						type="text"
+						value={amount}
+						onChange={(e) => setAmount(e.target.value)}
+						placeholder="0.01"
+						className="w-full rounded-xl border border-white/8 bg-white/4 px-4 py-3 text-white placeholder-zinc-500 focus:border-violet-500/50 focus:outline-none focus:bg-white/6 transition-all text-sm pr-16"
+					/>
+					<span className="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-medium text-zinc-500">
+						MON
+					</span>
+				</div>
+			</div>
+
 			<button
 				type="submit"
-				disabled={disabled || isPending || isConfirming}
-				className="w-full rounded-lg bg-zinc-100 px-4 py-2 font-medium text-zinc-900 transition-colors hover:bg-white disabled:opacity-50"
+				disabled={disabled || isWorking || !amount}
+				className={`w-full rounded-xl px-4 py-3 font-semibold text-sm text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+					side
+						? "bg-violet-600 hover:bg-violet-500"
+						: "bg-rose-600 hover:bg-rose-500"
+				}`}
 			>
-				{isPending || isConfirming ? "Placing bet..." : "Place Bet"}
+				{isWorking ? (
+					<span className="flex items-center justify-center gap-2">
+						<svg
+							className="h-4 w-4 animate-spin"
+							fill="none"
+							viewBox="0 0 24 24"
+						>
+							<circle
+								className="opacity-25"
+								cx="12"
+								cy="12"
+								r="10"
+								stroke="currentColor"
+								strokeWidth="4"
+							/>
+							<path
+								className="opacity-75"
+								fill="currentColor"
+								d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+							/>
+						</svg>
+						{isPending ? "Confirm in wallet…" : "Placing bet…"}
+					</span>
+				) : disabled ? (
+					"Connect wallet to bet"
+				) : (
+					`Bet ${side ? "Yes" : "No"}`
+				)}
 			</button>
 		</form>
 	);
