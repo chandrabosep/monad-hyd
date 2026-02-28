@@ -1,0 +1,39 @@
+// SkillStake - Prisma schema (Supabase/Postgres)
+// https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Pool {
+  id             String   @id
+  question       String
+  closeTime      DateTime
+  resolved       Boolean
+  winningSide    Boolean?
+  createdBy      String
+  sourceTweetId  String?  // X tweet ID when pool was created from a mention (for X API fetch)
+}
+
+model Bet {
+  id          String  @id @default(cuid())
+  poolId      String
+  userAddress String
+  amount      String
+  side        Boolean
+}
+
+// Tracks X mentions we've already processed (avoid duplicate pools)
+model ProcessedMention {
+  tweetId   String   @id
+  poolId    String
+  createdAt DateTime @default(now())
+}
