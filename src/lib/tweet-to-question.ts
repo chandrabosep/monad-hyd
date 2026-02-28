@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-const GROQ_MODEL = "openai/gpt-oss-20b";
+const GROQ_MODEL = "llama-3.3-70b-versatile";
 
 const client = new OpenAI({
 	apiKey: process.env.GROQ_API_KEY,
@@ -14,12 +14,14 @@ Rules:
 - The question must be answerable with Yes or No.
 - Use FUTURE tense: "Will X happen?" not "Did X happen?" or "Is X true?". Predictions are about future outcomes.
 - Keep it under 150 characters.
+- PRESERVE the EXACT names, tickers, tokens, and subjects from the post — do NOT substitute or invent alternatives.
 - Be specific and unambiguous. ALWAYS extract the actual topic/subject from the post.
 - If the post is already a yes/no question, rewrite in future tense and clean it up (remove @mentions).
+- NEVER hallucinate or replace names. If the post says "Vitalik" use "Vitalik". If it says "MON" use "MON".
 - NEVER output a generic "Will this happen?" - always use the real content. Examples:
   - "BTC to 100k" → "Will BTC reach $100k?"
   - "eth gonna moon" → "Will ETH price moon?"
-  - "thinking about buying" → "Will I buy?"
+  - "will vitalik beat mon" → "Will Vitalik beat MON?"
 - Only if the post is literally just "hey", "lol", or emoji with no content, output: "Will this happen?"
 - Remove all @mentions from the output.`;
 

@@ -15,6 +15,42 @@ const DEFAULT_CLOSE_HOURS = 24 * 7; // 7 days
 /** Only process tweets that mention this handle (e.g. @mooonhard) */
 const BOT_MENTION_HANDLE = (process.env.X_BOT_HANDLE || "mooonhard").toLowerCase();
 
+type WriteClient = NonNullable<ReturnType<typeof getWriteClient>>;
+
+/**
+ * Try to post as a direct reply. If X blocks it (403 — restricted replies,
+ * private account, bot not in conversation), fall back to a quote tweet so
+ * the pool link is always visible on X.
+ */
+async function postReply(
+	client: WriteClient,
+	text: string,
+	tweetId: string,
+): Promise<"replied" | "quoted" | "failed"> {
+	try {
+		await client.v2.tweet(text, { reply: { in_reply_to_tweet_id: tweetId } });
+		return "replied";
+	} catch (err: unknown) {
+		const e = err as { data?: { status?: number }; code?: number };
+		const status = e?.data?.status ?? e?.code;
+		if (status !== 403) {
+			console.error("[x/mentions] reply failed for tweet", tweetId, JSON.stringify(e?.data ?? String(err)));
+			return "failed";
+		}
+	}
+
+	// 403 fallback — quote the mention tweet instead
+	try {
+		await client.v2.tweet(text, { quote_tweet_id: tweetId });
+		console.log("[x/mentions] reply blocked; posted as quote tweet for", tweetId);
+		return "quoted";
+	} catch (qErr: unknown) {
+		const qe = qErr as { data?: unknown };
+		console.error("[x/mentions] quote tweet fallback also failed for", tweetId, JSON.stringify(qe?.data ?? String(qErr)));
+		return "failed";
+	}
+}
+
 /**
  * GET /api/x/mentions
  * Polls X for new mentions (api.x.com/2), creates pools, replies with links.
@@ -124,30 +160,13 @@ export async function GET(req: Request) {
 					const { optionA, optionB } = await questionToOptions(pool.question);
 					const poolUrl = `${APP_URL}/pools/${existing.poolId}`;
 					const replyText = `Q: ${pool.question}\nA) ${optionA}\nB) ${optionB}\n\nPlace your bets: ${poolUrl}`;
-					try {
-						await writeClient.v2.tweet(replyText, {
-							reply: { in_reply_to_tweet_id: tweetId },
-						});
+					const outcome = await postReply(writeClient, replyText, tweetId);
+					if (outcome !== "failed") {
 						await prisma.processedMention.update({
 							where: { tweetId },
 							data: { repliedAt: new Date() },
 						});
 						created.push({ tweetId, poolId: existing.poolId });
-					} catch (replyErr: unknown) {
-						const err = replyErr as { data?: { status?: number }; code?: number };
-						const status = err?.data?.status ?? err?.code;
-						const detail = err?.data ? JSON.stringify(err.data) : String(replyErr);
-						if (status === 403) {
-							// Permanently blocked from replying (restricted replies, private account, etc.)
-							// Mark as done to stop infinite retries; pool still exists and is accessible via URL
-							console.warn("[x/mentions] reply permanently blocked (403) for tweet", tweetId, "— marking as done. Pool:", existing.poolId);
-							await prisma.processedMention.update({
-								where: { tweetId },
-								data: { repliedAt: new Date() },
-							});
-						} else {
-							console.error("[x/mentions] reply retry failed for tweet", tweetId, "detail:", detail);
-						}
 					}
 				}
 				continue;
@@ -184,27 +203,12 @@ export async function GET(req: Request) {
 			const poolUrl = `${APP_URL}/pools/${poolId}`;
 			const replyText = `Q: ${question}\nA) ${optionA}\nB) ${optionB}\n\nPlace your bets: ${poolUrl}`;
 
-			try {
-				await writeClient.v2.tweet(replyText, {
-					reply: { in_reply_to_tweet_id: tweetId },
+			const outcome = await postReply(writeClient, replyText, tweetId);
+			if (outcome === "failed") {
+				// Transient failure — save pool without repliedAt so we retry the post next cron
+				await prisma.processedMention.create({
+					data: { tweetId, poolId },
 				});
-			} catch (replyErr: unknown) {
-				const err = replyErr as { data?: { status?: number }; code?: number };
-				const status = err?.data?.status ?? err?.code;
-				const detail = err?.data ? JSON.stringify(err.data) : String(replyErr);
-				if (status === 403) {
-					// Permanently blocked from replying — mark fully processed so we don't retry
-					console.warn("[x/mentions] reply permanently blocked (403) for tweet", tweetId, "— marking as done. Pool:", poolId);
-					await prisma.processedMention.create({
-						data: { tweetId, poolId, repliedAt: new Date() },
-					});
-				} else {
-					console.error("[x/mentions] reply failed for tweet", tweetId, "detail:", detail);
-					// Mark pool as created so we don't duplicate; will retry reply on next cron
-					await prisma.processedMention.create({
-						data: { tweetId, poolId },
-					});
-				}
 				continue;
 			}
 
