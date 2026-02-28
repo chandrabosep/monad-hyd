@@ -17,16 +17,19 @@ const BOT_MENTION_HANDLE = (process.env.X_BOT_HANDLE || "mooonhard").toLowerCase
 
 type WriteClient = NonNullable<ReturnType<typeof getWriteClient>>;
 
+const RETRY_GIVE_UP_MS = 30 * 60 * 1000; // stop retrying reply after 30 min
+
 /**
  * Try to post as a direct reply. If X blocks it (403 — restricted replies,
- * private account, bot not in conversation), fall back to a quote tweet so
- * the pool link is always visible on X.
+ * private account, bot not in conversation), fall back to a quote tweet,
+ * then to a standalone tweet containing a link to the original.
  */
 async function postReply(
 	client: WriteClient,
 	text: string,
 	tweetId: string,
-): Promise<"replied" | "quoted" | "failed"> {
+): Promise<"replied" | "quoted" | "standalone" | "failed"> {
+	// 1. Direct reply
 	try {
 		await client.v2.tweet(text, { reply: { in_reply_to_tweet_id: tweetId } });
 		return "replied";
@@ -39,7 +42,7 @@ async function postReply(
 		}
 	}
 
-	// 403 fallback — quote the mention tweet instead
+	// 2. Quote tweet fallback
 	try {
 		await client.v2.tweet(text, { quote_tweet_id: tweetId });
 		console.log("[x/mentions] reply blocked; posted as quote tweet for", tweetId);
@@ -47,6 +50,17 @@ async function postReply(
 	} catch (qErr: unknown) {
 		const qe = qErr as { data?: unknown };
 		console.error("[x/mentions] quote tweet fallback also failed for", tweetId, JSON.stringify(qe?.data ?? String(qErr)));
+	}
+
+	// 3. Standalone tweet with link to the original
+	try {
+		const tweetUrl = `https://x.com/i/status/${tweetId}`;
+		await client.v2.tweet(`${text}\n\nRef: ${tweetUrl}`);
+		console.log("[x/mentions] posted standalone tweet with link for", tweetId);
+		return "standalone";
+	} catch (sErr: unknown) {
+		const se = sErr as { data?: unknown };
+		console.error("[x/mentions] standalone tweet also failed for", tweetId, JSON.stringify(se?.data ?? String(sErr)));
 		return "failed";
 	}
 }
@@ -153,6 +167,16 @@ export async function GET(req: Request) {
 
 			// Have pool but reply failed before - retry reply only
 			if (existing) {
+				const ageMs = Date.now() - existing.createdAt.getTime();
+				if (ageMs > RETRY_GIVE_UP_MS) {
+					console.warn("[x/mentions] giving up reply for tweet", tweetId, `after ${Math.round(ageMs / 60000)}m`);
+					await prisma.processedMention.update({
+						where: { tweetId },
+						data: { repliedAt: existing.createdAt },
+					});
+					continue;
+				}
+
 				const pool = await prisma.pool.findUnique({
 					where: { id: existing.poolId },
 				});
